@@ -28,7 +28,7 @@ import sys
 import werkzeug
 from psycopg2 import OperationalError
 
-from .misc import ustr
+from .misc import ustr, frozendict
 
 import odoo
 
@@ -311,13 +311,16 @@ class SubscriptWrapper:
 
 
 class FuncWrapper:
-    def __init__(self, function, check_fn):
+    def __init__(self, function, check_fn, check_attr):
         self.function = function
         self.check_fn = check_fn
+        self.check_attr = check_attr
 
-    def call(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
         self.check_fn(self.function, *args, **kwargs)
 
+    def __getattr__(self, name):
+        return self.check_attr(self.function, name, getattr(self.function, name))
 
 class wrap_module:
     def __init__(self, module, attributes):
@@ -376,7 +379,8 @@ __safe_type = (
     SubscriptWrapper,
     wrap_module,
     datetime.date,
-    datetime.datetime
+    datetime.datetime,
+    frozendict
 )
 
 class NodeChecker(ast.NodeTransformer):
@@ -530,9 +534,9 @@ def expr_checker_prepare_context(
         :return: The value passed to this function.
         """
 
-        if callable(value) and method:
-            return FuncWrapper(value, __ast_default_check_call).call
-
+        if callable(value) and method in ["returned", "arguments", "subscript", "self"]:
+            return FuncWrapper(value, __ast_default_check_call, __ast_check_attr_and_type)
+        
         if not isinstance(value, odoo.models.BaseModel) and (
             type(value) not in __safe_type + __require_checks_type or (
                 type(value) in __require_checks_type
@@ -583,6 +587,7 @@ def expr_checker_prepare_context(
                         and not hasattr(args[0], func.__name__)
                     )
                     or (
+                        args and 
                         hasattr(args[0], func.__name__)
                         and getattr(args[0], func.__name__).__func__ != func
                     )
@@ -666,6 +671,7 @@ def expr_checker(
 
 
 def safe_eval(expr, globals_dict={}, allow_function_calls=True, allow_private=False, check_attr=None, check_type=None, check_function=None, *args, **kwargs):
+    print(expr)
     if sys.version_info.minor < 9:
         _logger.warning("Your version of Python is deprecated, please upgrade to 3.9 or later")
         _safe_eval_legacy(expr, globals_dict, *args, **kwargs)
@@ -679,7 +685,7 @@ def safe_eval(expr, globals_dict={}, allow_function_calls=True, allow_private=Fa
         check_attr = lambda obj, key: obj
 
     globals_dict.update(expr_checker_prepare_context(check_attr, check_type=check_type, check_function=check_function))
-
+    print(checked_expr)
     return _safe_eval_legacy(checked_expr, globals_dict, *args, **kwargs)
 
 

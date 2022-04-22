@@ -476,10 +476,11 @@ def keep_query(*keep_params, **additional_params):
 
 
 def _qweb_ast_check_attr(obj, key):
-     return (isinstance(obj, (dict, OrderedDict, Markup, list)) and key in ("get", "strip", "count")) or (hasattr(obj, "_fields") and key in obj._fields)
+     return (isinstance(obj, (dict, OrderedDict, Markup, list, JSON)) and key in ("get", "strip", "count", "dumps")) or (hasattr(obj, "_fields") and key in obj._fields) \
+            or key == "csrf_token"
 
 def _qweb_ast_check_type(method, value):
-    if type(value) in {OrderedDict, Markup} or isinstance(value, BaseModel):
+    if type(value) in {OrderedDict, Markup, JSON, _ScriptSafe} or isinstance(value, (BaseModel, dict)):
         return value
 
 def _qweb_ast_check_function(func, *args, **kwargs):
@@ -488,7 +489,7 @@ def _qweb_ast_check_function(func, *args, **kwargs):
     It's not really recommended to do that, in fact, the __ast_default_check_function will do other checks, but in our case we don't really need it
     """
 
-    if func.__name__ in ["get", "strip", "count"]:
+    if func.__name__ in ["get", "strip", "count", "csrf_token", "len", "dumps"]:
         return func(*args, **kwargs)
     
     raise Exception("qweb didn't permit you to call any functions")

@@ -8,6 +8,19 @@ from lxml import html
 
 
 class SafeExprQWebTester(common.MailCommon):
+    @classmethod
+    def setUpClass(cls):
+        super(SafeExprQWebTester, cls).setUpClass()
+        _partner = cls.env["res.partner"]
+
+        cls.test_partner_id = _partner.create(
+            {
+                "name": "Johnny Test",
+                "lang": "en_US",
+                "comment": "A very good person, but a bit too experimental",
+            }
+        )
+
     def render_qweb(self, expr, ctx={}, bench=False):
         if bench:
             with_checks = 0
@@ -92,17 +105,32 @@ class SafeExprQWebTester(common.MailCommon):
             expr, model, res_id, engine="qweb"
         )
 
-    def test_benchmark(self):
-        partner = self.env["res.partner"]
+    def test_reflect_env(self):
+        with self.assertRaises(ValueError):
+            code = cleandoc(
+                """ 
+                <p t t-esc="object.env" /></p>
+                """
+            )
 
-        test_partner_id = partner.create(
-            {
-                "name": "Johnny Test",
-                "lang": "en_US",
-                "comment": "A very good person, but a bit too experimental",
-            }
-        )
+            self.render_qweb_render_mixin(code, self.test_partner_id._name, self.test_partner_id.ids)[
+                self.test_partner_id.id
+            ]
 
+    def test_function_calls(self):
+        with self.assertRaisesRegex(Exception, "qweb didn't permit you to call any functions"):
+            code = cleandoc(
+                """ 
+                <t t-foreach="range(2, 20)" t-as="i">
+                    <p><t t-esc='i' /></p>
+                </t>
+                """
+            )
+
+            self.render_qweb(code)
+
+
+    def test_zbenchmark(self):
         code = cleandoc(
             """
         <p><t t-esc="object.name" /></p>
@@ -111,6 +139,7 @@ class SafeExprQWebTester(common.MailCommon):
         """
         )
 
-        self.render_qweb_render_mixin(code, test_partner_id._name, test_partner_id.ids, bench=True)[
-            test_partner_id.id
+        self.render_qweb_render_mixin(code, self.test_partner_id._name, self.test_partner_id.ids, bench=True)[
+            self.test_partner_id.id
         ]
+
