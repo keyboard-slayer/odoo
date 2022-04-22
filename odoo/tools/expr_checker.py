@@ -303,7 +303,9 @@ def expr_checker_prepare_context(
         :return: the tested value
         """
 
-        if __ast_default_check_type("attribute", get_attr(value, attr)):
+        ret = __ast_default_check_type("attribute", get_attr(value, attr))
+ 
+        if ret or (not ret and type(ret) != bool):
             return node
         else:
             raise ValueError(f"safe_eval doesn't permit you to read {attr} from {node}")

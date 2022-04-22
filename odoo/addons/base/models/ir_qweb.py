@@ -388,8 +388,7 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, models, tools
 from odoo.tools import config, safe_eval, pycompat, SUPPORTED_DEBUGGER
-from odoo.tools.safe_eval import assert_valid_codeobj, _BUILTINS, to_opcodes, _EXPR_OPCODES, _BLACKLIST
-from odoo.tools.expr_checker import expr_checker, expr_checker_prepare_context
+from odoo.tools.safe_eval import assert_valid_codeobj, _BUILTINS, to_opcodes, _EXPR_OPCODES, _BLACKLIST, expr_checker, expr_checker_prepare_context
 from odoo.tools.json import _ScriptSafe, JSON, scriptsafe
 from odoo.tools.misc import get_lang
 from odoo.tools.image import image_data_uri
@@ -476,12 +475,24 @@ def keep_query(*keep_params, **additional_params):
     return werkzeug.urls.url_encode(params)
 
 
-def _qweb_ast_get_attr(obj, key):
-    return (isinstance(obj, (dict, JSON, Markup, list)) and key in ("dumps", "get", "count", "strip")) or (hasattr(obj, "_fields") and key in obj._fields)
+def _qweb_ast_check_attr(obj, key):
+     return (isinstance(obj, (dict, OrderedDict, Markup, list)) and key in ("get", "strip", "count")) or (hasattr(obj, "_fields") and key in obj._fields)
 
 def _qweb_ast_check_type(method, value):
-    if type(value) in {OrderedDict, Markup, JSON, _ScriptSafe} or isinstance(value, BaseModel):
+    if type(value) in {OrderedDict, Markup} or isinstance(value, BaseModel):
         return value
+
+def _qweb_ast_check_function(func, *args, **kwargs):
+    """
+    Because we want to block function calls except get methods, we are going to raise an exception in stead of returning a False / None value.
+    It's not really recommended to do that, in fact, the __ast_default_check_function will do other checks, but in our case we don't really need it
+    """
+
+    if func.__name__ in ["get", "strip", "count"]:
+        return func(*args, **kwargs)
+    
+    raise Exception("qweb didn't permit you to call any functions")
+    
 
 ####################################
 ###        QWebException         ###
@@ -856,7 +867,7 @@ class IrQWeb(models.AbstractModel):
             'Markup': Markup,
             'escape': escape,
             'VOID_ELEMENTS': VOID_ELEMENTS,
-            **expr_checker_prepare_context(_qweb_ast_get_attr, check_type=_qweb_ast_check_type),
+            **expr_checker_prepare_context(_qweb_ast_check_attr, check_type=_qweb_ast_check_type, check_function=_qweb_ast_check_function),
             **_BUILTINS,
         }
 

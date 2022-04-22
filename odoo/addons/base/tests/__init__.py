@@ -56,4 +56,4 @@ from . import test_cloc
 from . import test_profiler
 from . import test_pdf
 from . import test_expr_checker
-from . import test_expr_checker_qweb
+from . import test_benchmark

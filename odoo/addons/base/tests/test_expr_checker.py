@@ -9,7 +9,6 @@ from odoo.tests.common import BaseCase
 from odoo.tools.safe_eval2 import safe_eval
 from odoo.tools.expr_checker import expr_checker
 
-
 class CustomCollection:
     def __init__(self, value):
         pass
