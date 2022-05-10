@@ -627,6 +627,7 @@ class TestQWebBasic(TransactionCase):
             ("(lambda test: len(test))('aaa')",         {},                             3),
             ("{'a': lambda a: a[0], 'b': 3}['a']([5])", {},                             5),
             ("list(map(lambda a: a[0], r))",            {'r': [(1,11), (2,22)]},        [1, 2]),
+            ("[(lambda a: a[0])(x) for x in r]",        {'r': [(1,11), (2,22)]},        [1, 2]),
             ("z + (head or 'z')",                       {'z': 'a'},                     "az"),
             ("z + (head or 'z')",                       {'z': 'a', 'head': 'b'},        "ab"),
             ("{a:b for a, b in [(1,11), (2, 22)]}",     {},                             {1: 11, 2: 22}),

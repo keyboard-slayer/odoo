@@ -7,8 +7,6 @@ freezegun==0.3.11; python_version < '3.8'
 freezegun==0.3.15; python_version >= '3.8'
 gevent==1.5.0 ; python_version == '3.7'
 gevent==20.9.0 ; python_version >= '3.8'
-greenlet==0.4.15 ; python_version == '3.7'
-greenlet==0.4.17 ; python_version > '3.7'
 idna==2.8
 Jinja2==2.11.3 # min version = 2.10.1 (Focal - with security backports)
 libsass==0.18.0
@@ -28,7 +26,6 @@ PyPDF2==1.26.0
 pypiwin32 ; sys_platform == 'win32'
 pyserial==3.4
 python-dateutil==2.7.3
-python-ldap==3.4.0 ; sys_platform != 'win32'  # min version = 3.2.0 (Focal with security backports)
 python-stdnum==1.13
 pytz==2019.3
 pyusb==1.0.2

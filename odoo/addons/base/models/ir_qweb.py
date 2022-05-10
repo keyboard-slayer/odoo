@@ -380,6 +380,7 @@ import werkzeug
 
 from markupsafe import Markup, escape
 from collections.abc import Sized, Mapping
+from collections import OrderedDict
 from itertools import count, chain
 from lxml import etree
 from psycopg2.extensions import TransactionRollbackError
@@ -387,12 +388,13 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, models, tools
 from odoo.tools import config, safe_eval, pycompat, SUPPORTED_DEBUGGER
-from odoo.tools.safe_eval import assert_valid_codeobj, _BUILTINS, to_opcodes, _EXPR_OPCODES, _BLACKLIST
-from odoo.tools.json import scriptsafe
+from odoo.tools.safe_eval import assert_valid_codeobj, _BUILTINS, to_opcodes, _EXPR_OPCODES, _BLACKLIST, expr_checker, expr_checker_prepare_context
+from odoo.tools.json import _ScriptSafe, JSON, scriptsafe
 from odoo.tools.misc import get_lang
 from odoo.tools.image import image_data_uri
 from odoo.http import request
 from odoo.modules.module import get_resource_path
+from odoo.models import BaseModel
 from odoo.tools.profiler import QwebTracker
 from odoo.exceptions import UserError
 
@@ -471,6 +473,31 @@ def keep_query(*keep_params, **additional_params):
             if param not in additional_params and param in qs_keys:
                 params[param] = request.httprequest.args.getlist(param)
     return werkzeug.urls.url_encode(params)
+
+
+def _qweb_ast_check_attr(obj, key):
+      if (isinstance(obj, (dict, OrderedDict, Markup, list, JSON)) and key in ("get", "strip", "count", "dumps")) or (hasattr(obj, "_fields") and key in obj._fields) \
+            or key == "csrf_token":
+            return getattr(obj, key)
+
+def _qweb_ast_check_type(method, value):
+    return type(value) in {OrderedDict, Markup, JSON, _ScriptSafe} or isinstance(value, (BaseModel, dict))
+
+def _qweb_ast_check_function(func, *args, **kwargs):
+    """
+    Because we want to block function calls except get methods, we are going to raise an exception in stead of returning a False / None value.
+    It's not really recommended to do that, in fact, the __ast_default_check_function will do other checks, but in our case we don't really need it
+    """
+
+    # # FIXME: with safe models
+    # if func.__name__ in ["get", "strip", "count", "csrf_token", "len", "dumps", "get_frontend_session_info", "now", "strftime", "today", "timedelta", "_lang_get", 
+    #     "keep_query"]:
+    #     return func(*args, **kwargs)
+    
+    # raise Exception(f"qweb didn't permit you to call any functions (detected call to {func.__name__})")
+
+    return func(*args, **kwargs)
+    
 
 ####################################
 ###        QWebException         ###
@@ -845,6 +872,7 @@ class IrQWeb(models.AbstractModel):
             'Markup': Markup,
             'escape': escape,
             'VOID_ELEMENTS': VOID_ELEMENTS,
+            **expr_checker_prepare_context(check_attr=_qweb_ast_check_attr, check_type=_qweb_ast_check_type, check_function=_qweb_ast_check_function),
             **_BUILTINS,
         }
 
@@ -948,7 +976,7 @@ class IrQWeb(models.AbstractModel):
         open_bracket_index = -1
         bracket_depth = 0
 
-        argument_name = '_arg_%s__'
+        argument_name = 'arg_%s__'
         argument_names = argument_names or []
 
         for index, t in enumerate(tokens):
@@ -1103,7 +1131,14 @@ class IrQWeb(models.AbstractModel):
 
         assert_valid_codeobj(_SAFE_QWEB_OPCODES, compile(expression, '<>', 'eval'), expr)
 
-        return f"({expression})"
+        if self.env.context.get("benchmark_mode"):
+            return f"({expression})"
+        else:
+            expression_with_checks = expr_checker(expression)
+            print(" === QWEB debug === ")
+            print("Before: ", expr)
+            print("After: ", expression_with_checks)
+            return f"({expression_with_checks})"
 
     def _compile_bool(self, attr, default=False):
         """Convert the statements as a boolean."""

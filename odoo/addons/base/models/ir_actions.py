@@ -6,6 +6,7 @@ from odoo import api, fields, models, tools, SUPERUSER_ID, _, Command
 from odoo.exceptions import MissingError, UserError, ValidationError, AccessError
 from odoo.osv import expression
 from odoo.tools.safe_eval import safe_eval, test_python_expr
+from odoo.tools.expr_checker import expr_checker, expr_checker_prepare_context
 from odoo.tools.float_utils import float_compare
 from odoo.http import request
 
