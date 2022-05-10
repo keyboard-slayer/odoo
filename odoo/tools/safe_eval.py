@@ -15,8 +15,10 @@ condition/math builtins.
 #  - safe_eval in lp:~xrg/openobject-server/optimize-5.0
 #  - safe_eval in tryton http://hg.tryton.org/hgwebdir.cgi/trytond/rev/bbb5f73319ad
 import ast
+import enum
 import dis
 import datetime
+from dateutil.relativedelta import relativedelta
 import functools
 from inspect import cleandoc, getsource
 import logging
@@ -173,7 +175,8 @@ def assert_valid_codeobj(allowed_codes, code_obj, expr):
 
     for const in code_obj.co_consts:
         if isinstance(const, CodeType):
-            assert_valid_codeobj(allowed_codes, const, 'lambda')
+            # assert_valid_codeobj(allowed_codes, const, 'lambda')
+            assert_valid_codeobj(allowed_codes, const, expr)
 
 def test_expr(expr, allowed_codes, mode="eval"):
     """test_expr(expression, allowed_codes[, mode]) -> code_object
@@ -380,7 +383,11 @@ __safe_type = (
     wrap_module,
     datetime.date,
     datetime.datetime,
-    frozendict
+    datetime.timedelta,
+    enum.EnumMeta,
+    frozendict,
+    odoo.api.Environment,
+    relativedelta
 )
 
 class NodeChecker(ast.NodeTransformer):
@@ -492,7 +499,7 @@ def is_unbound_method_call(func):
 
 
 def expr_checker_prepare_context(
-    check_attr, return_code=False, check_type=None, check_function=None
+    check_attr=None, return_code=False, check_type=None, check_function=None
 ):
     """
     expr_checker_prepare_context(check_attr, return_code, check_type, check_type) -> (dict | str)
@@ -536,6 +543,9 @@ def expr_checker_prepare_context(
 
         if callable(value) and method in ["returned", "arguments", "subscript", "self"]:
             return FuncWrapper(value, __ast_default_check_call, __ast_check_attr_and_type)
+
+        if type(value) == type and value in __safe_type:
+            return value
         
         if not isinstance(value, odoo.models.BaseModel) and (
             type(value) not in __safe_type + __require_checks_type or (
@@ -601,6 +611,26 @@ def expr_checker_prepare_context(
 
         return __ast_default_check_type("returned", func(*args, **kwargs))
 
+    def __ast_check_attr(obj, key):
+        """
+        __ast_check_attr -> value
+
+        Will check if the user is allowed to read a certain attribute from an object
+
+        :param obj: The object with the attribute we want to read
+        :param key: The attribute we want to read, represented as a string 
+        """
+
+        if not obj:
+            return obj
+
+        if type(obj) == odoo.api.Environment and key in ["env"] or \
+            check_attr != None and check_attr(obj, key):
+            return getattr(obj, key)
+        
+        return getattr(obj, key) # FIXME
+        # raise ValueError(f"safe-eval didn't permit you to read {key} from {obj} (of type {type(obj)})")
+
     def __ast_check_attr_and_type(value, attr, node):
         """
         __ast_check_attr_and_type -> value
@@ -615,41 +645,45 @@ def expr_checker_prepare_context(
         :return: the tested value
         """
 
-        ret = __ast_default_check_type("attribute", check_attr(value, attr))
- 
-        if ret or (not ret and type(ret) != bool):
+        ret = __ast_default_check_type("attribute", __ast_check_attr(value, attr))
+
+        if ret or (not ret and type(ret) == bool):
             return node
-        else:
-            raise ValueError(f"safe_eval doesn't permit you to read {attr} from {node}")
+        
+        return node #FIXME
+        #raise ValueError(f"safe_eval doesn't permit you to read {attr} from {node} of type {type(node)}")
 
     if not return_code:
         return {
             "__ast_check_type_fn": __ast_default_check_type,
             "__ast_check_fn": __ast_default_check_call,
+            "__ast_check_attr": __ast_check_attr,
             "__ast_check_attr_and_type": __ast_check_attr_and_type,
             "SubscriptWrapper": SubscriptWrapper,
             "FuncWrapper": FuncWrapper
         }
 
     else:
-        return "\n".join(
-            [
-                cleandoc(
-                    getsource(check_attr).replace(check_attr.__name__, "__ast_check_attr")
-                ),
-                cleandoc(
-                    getsource(check_type).replace(
-                        check_type.__name__, "__ast_check_type_fn"
-                    )
-                ),
-                cleandoc(
-                    getsource(check_function).replace(
-                        check_function.__name__, "__ast_check_fn"
-                    )
-                ),
-                user_code,
-            ]
-        )
+        pass
+        # TODO
+        # return "\n".join(
+        #     [
+        #         cleandoc(
+        #             getsource(check_attr).replace(check_attr.__name__, "__ast_check_attr")
+        #         ),
+        #         cleandoc(
+        #             getsource(check_type).replace(
+        #                 check_type.__name__, "__ast_check_type_fn"
+        #             )
+        #         ),
+        #         cleandoc(
+        #             getsource(check_function).replace(
+        #                 check_function.__name__, "__ast_check_fn"
+        #             )
+        #         ),
+        #         user_code,
+        #     ]
+        # )
 
 
 def expr_checker(
@@ -671,7 +705,6 @@ def expr_checker(
 
 
 def safe_eval(expr, globals_dict={}, allow_function_calls=True, allow_private=False, check_attr=None, check_type=None, check_function=None, *args, **kwargs):
-    print(expr)
     if sys.version_info.minor < 9:
         _logger.warning("Your version of Python is deprecated, please upgrade to 3.9 or later")
         _safe_eval_legacy(expr, globals_dict, *args, **kwargs)
@@ -681,12 +714,13 @@ def safe_eval(expr, globals_dict={}, allow_function_calls=True, allow_private=Fa
 
     checked_expr = expr_checker(expr, allow_function_calls=allow_function_calls, allow_private=allow_private)
 
-    if check_attr is None:
-        check_attr = lambda obj, key: obj
-
-    globals_dict.update(expr_checker_prepare_context(check_attr, check_type=check_type, check_function=check_function))
+    globals_dict.update(expr_checker_prepare_context(check_attr=check_attr, check_type=check_type, check_function=check_function))
     print(checked_expr)
-    return _safe_eval_legacy(checked_expr, globals_dict, *args, **kwargs)
+
+    try:
+        return _safe_eval_legacy(checked_expr, globals_dict, *args, **kwargs)
+    except ValueError as e:
+        raise ValueError('%s: "%s" while evaluating\n%r' % (ustr(type(e)), ustr(e), expr))
 
 
 def _safe_eval_legacy(expr, globals_dict=None, locals_dict=None, mode="eval", nocopy=False, locals_builtins=False):

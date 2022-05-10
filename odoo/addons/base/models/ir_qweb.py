@@ -476,12 +476,12 @@ def keep_query(*keep_params, **additional_params):
 
 
 def _qweb_ast_check_attr(obj, key):
-     return (isinstance(obj, (dict, OrderedDict, Markup, list, JSON)) and key in ("get", "strip", "count", "dumps")) or (hasattr(obj, "_fields") and key in obj._fields) \
-            or key == "csrf_token"
+      if (isinstance(obj, (dict, OrderedDict, Markup, list, JSON)) and key in ("get", "strip", "count", "dumps")) or (hasattr(obj, "_fields") and key in obj._fields) \
+            or key == "csrf_token":
+            return getattr(obj, key)
 
 def _qweb_ast_check_type(method, value):
-    if type(value) in {OrderedDict, Markup, JSON, _ScriptSafe} or isinstance(value, (BaseModel, dict)):
-        return value
+    return type(value) in {OrderedDict, Markup, JSON, _ScriptSafe} or isinstance(value, (BaseModel, dict))
 
 def _qweb_ast_check_function(func, *args, **kwargs):
     """
@@ -489,10 +489,14 @@ def _qweb_ast_check_function(func, *args, **kwargs):
     It's not really recommended to do that, in fact, the __ast_default_check_function will do other checks, but in our case we don't really need it
     """
 
-    if func.__name__ in ["get", "strip", "count", "csrf_token", "len", "dumps"]:
-        return func(*args, **kwargs)
+    # # FIXME: with safe models
+    # if func.__name__ in ["get", "strip", "count", "csrf_token", "len", "dumps", "get_frontend_session_info", "now", "strftime", "today", "timedelta", "_lang_get", 
+    #     "keep_query"]:
+    #     return func(*args, **kwargs)
     
-    raise Exception("qweb didn't permit you to call any functions")
+    # raise Exception(f"qweb didn't permit you to call any functions (detected call to {func.__name__})")
+
+    return func(*args, **kwargs)
     
 
 ####################################
@@ -868,7 +872,7 @@ class IrQWeb(models.AbstractModel):
             'Markup': Markup,
             'escape': escape,
             'VOID_ELEMENTS': VOID_ELEMENTS,
-            **expr_checker_prepare_context(_qweb_ast_check_attr, check_type=_qweb_ast_check_type, check_function=_qweb_ast_check_function),
+            **expr_checker_prepare_context(check_attr=_qweb_ast_check_attr, check_type=_qweb_ast_check_type, check_function=_qweb_ast_check_function),
             **_BUILTINS,
         }
 
@@ -1131,6 +1135,9 @@ class IrQWeb(models.AbstractModel):
             return f"({expression})"
         else:
             expression_with_checks = expr_checker(expression)
+            print(" === QWEB debug === ")
+            print("Before: ", expr)
+            print("After: ", expression_with_checks)
             return f"({expression_with_checks})"
 
     def _compile_bool(self, attr, default=False):

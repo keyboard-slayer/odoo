@@ -130,7 +130,7 @@ class SafeExprQWebTester(common.MailCommon):
             self.render_qweb(code)
 
 
-    def test_zbenchmark(self):
+    def test_benchmark(self):
         code = cleandoc(
             """
         <p><t t-esc="object.name" /></p>

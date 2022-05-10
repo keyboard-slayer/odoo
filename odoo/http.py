@@ -911,7 +911,6 @@ class Response(werkzeug.wrappers.Response):
     def render(self):
         """ Renders the Response's template, returns the result. """
         self.qcontext['request'] = request
-        self.qcontext['session_info'] = json.dumps(request.env['ir.http'].get_frontend_session_info())
         return request.env["ir.ui.view"]._render_template(self.template, self.qcontext)
 
     def flatten(self):

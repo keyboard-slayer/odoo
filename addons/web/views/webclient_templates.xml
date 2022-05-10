@@ -38,7 +38,7 @@
       </xpath>
       <xpath expr="//head/script[@id='web.layout.odooscript']" position="after">
         <script type="text/javascript">
-            odoo.__session_info__ = <t t-out="session_info"/>;
+            odoo.__session_info__ = <t t-out="json.dumps(request.env['ir.http'].get_frontend_session_info())"/>;
             if (!/(^|;\s)tz=/.test(document.cookie)) {
                 const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
                 document.cookie = `tz=${userTZ}; path=/`;
